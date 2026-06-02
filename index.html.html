@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Los Andes - Pro V13</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <style>
+        :root { 
+            --primary: #4f46e5; --secondary: #8b5cf6; --success: #10b981; 
+            --danger: #ef4444; --warning: #f59e0b; --info: #3b82f6;
+            --bg: #f8fafc; --card: #ffffff; --text: #1e293b;
+        }
+
+        body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 15px; }
+        
+        /* Header & Dashboard */
+        .app-header { background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; padding: 20px; border-radius: 16px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 15px; }
+        .stat-card { background: rgba(255,255,255,0.2); padding: 10px; border-radius: 10px; text-align: center; backdrop-filter: blur(5px); }
+
+        /* Notificación de Auditoría */
+        #aviso-auditoria { display: none; background: var(--warning); color: #000; padding: 15px; border-radius: 12px; margin-bottom: 15px; font-weight: bold; animation: pulse 2s infinite; border: 2px solid #b45309; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.8; } 100% { opacity: 1; } }
+
+        /* Navegación */
+        .nav-tabs { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 0; padding-bottom: 0; }
+        .tab-btn { padding: 12px 20px; border: none; border-radius: 12px 12px 0 0; cursor: pointer; background: #e2e8f0; color: #64748b; font-weight: 600; transition: 0.3s; white-space: nowrap; }
+        .tab-btn.active { background: var(--card); color: var(--primary); box-shadow: 0 -4px 6px -1px rgba(0,0,0,0.05); }
+
+        /* Contenedores */
+        .main-container { background: var(--card); padding: 20px; border-radius: 0 16px 16px 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+       /* Navegación Fija Arriba */
+        .nav-tabs { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 0; padding-bottom: 0; position: sticky; top: 55px; background: var(--bg); z-index: 1000; }
+        .tab-btn { padding: 12px 20px; border: none; border-radius: 12px 12px 0 0; cursor: pointer; background: #e2e8f0; color: #64748b; font-weight: 600; transition: 0.3s; white-space: nowrap; }
+        .tab-btn.active { background: var(--card); color: var(--primary); box-shadow: 0 -4px 6px -1px rgba(0,0,0,0.05); }
+
+        /* Contenedores */
+        .main-container { background: var(--card); padding: 20px; border-radius: 0 16px 16px 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Herramientas Fijas Arriba */
+        .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; position: sticky; top: 0; background: var(--bg); padding: 10px 0; z-index: 1000; }
+        .btn { padding: 10px 16px; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; color: white; display: flex; align-items: center; gap: 8px; transition: 0.2s; font-size: 13px; }
+        .btn:active { transform: scale(0.95); }
+        .search-input { flex: 1; min-width: 200px; padding: 10px 15px; border: 1px solid #cbd5e0; border-radius: 8px; outline: none; }
+        /* Tablas Estilizadas */
+        .table-wrapper { overflow-x: auto; border-radius: 8px; border: 1px solid #e2e8f0; }
+        table { width: 100%; border-collapse: collapse; background: white; }
+        th { background: #f1f5f9; padding: 12px; text-align: center; font-size: 11px; text-transform: uppercase; color: #475569; }
+        td { padding: 10px; border-bottom: 1px solid #f1f5f9; text-align: center; }
+        input[type="text"], input[type="number"], input[type="date"] { width: 90%; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px; text-align: center; }
+        
+        .low-stock { background-color: #fff1f2; }
+        .diff-pos { color: var(--success); font-weight: bold; }
+        .diff-neg { color: var(--danger); font-weight: bold; }
+
+        /* Modales */
+        .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:2000; backdrop-filter: blur(4px); }
+        .modal-body { background:white; width: 90%; max-width: 500px; margin: 50px auto; padding: 25px; border-radius: 20px; }
+    </style>
+</head>
+<body>
+
+    <div id="aviso-auditoria">
+        🔔 ALAN: Hoy es día de auditoría (Lunes/Viernes). Te recomiendo realizar un cuadre físico rápido.
+    </div>
+
+    <div class="app-header">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+                <h1 style="margin:0; font-size: 20px;">Gestión de Inventario</h1>
+                <p style="margin:0; opacity: 0.8; font-size: 14px;" id="fecha-actual"></p>
+            </div>
+            <div style="text-align: right;">
+                <span style="font-size: 12px; opacity: 0.9;">V13.0 PRO</span><br>
+                <strong>Alan Fábrega</strong>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div style="font-size: 10px; opacity: 0.8;">PRODUCTOS</div>
+                <div id="stat-total" style="font-size: 18px; font-weight: bold;">0</div>
+            </div>
+            <div class="stat-card" style="background: rgba(239, 68, 68, 0.3);">
+                <div style="font-size: 10px; opacity: 0.8;">BAJO STOCK</div>
+                <div id="stat-low" style="font-size: 18px; font-weight: bold;">0</div>
+            </div>
+            <div class="stat-card" style="background: rgba(16, 185, 129, 0.3);">
+                <div style="font-size: 10px; opacity: 0.8;">SALIDAS HOY</div>
+                <div id="stat-salidas" style="font-size: 18px; font-weight: bold;">0</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <input type="text" id="main-search" class="search-input" placeholder="Buscar producto o código..." onkeyup="sincronizar()">
+        <button class="btn" style="background: var(--info);" onclick="document.getElementById('excelInput').click()">📥 Importar</button>
+        <button class="btn" style="background: var(--success);" onclick="exportarExcel()">📊 Informe</button>
+        <button class="btn" style="background: var(--primary);" onclick="guardar()">💾 Guardar</button>
+        <button class="btn" style="background: var(--warning);" onclick="abrirAuditoriaRapida()">⚖️ Cuadre Rápido</button>
+        <input type="file" id="excelInput" accept=".xlsx, .xls" style="display:none" onchange="procesarExcel(this)">
+    </div>
+
+    <div class="nav-tabs">
+        <button class="tab-btn active" onclick="openTab(event, 'inventario')">📦 Inventario</button>
+        <button class="tab-btn" onclick="openTab(event, 'logistica'); sugerirCarga();">🚚 Sugerencia</button>
+        <button class="tab-btn" onclick="openTab(event, 'entradas')">📥 Entradas</button>
+        <button class="tab-btn" onclick="openTab(event, 'salidas')">📤 Salidas</button>
+    </div>
+
+    <div class="main-container">
+        <div id="inventario" class="tab-content active">
+            <div class="table-wrapper">
+                <table id="tabla-inv">
+                    <thead>
+                        <tr>
+                            <th>Cód</th>
+                            <th style="text-align: left;">Descripción</th>
+                            <th>Inic</th>
+                            <th>Ent</th>
+                            <th>Sal</th>
+                            <th>Sist</th>
+                            <th>Físico</th>
+                            <th>Dif</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <button class="btn" style="background: #64748b; margin-top: 15px;" onclick="addRow('tabla-inv')">➕ Nuevo Producto</button>
+        </div>
+
+        <div id="logistica" class="tab-content">
+            <div style="background: #f0fdf4; padding: 15px; border-radius: 12px; margin-bottom: 15px; border: 1px solid #bbf7d0;">
+                <h3 style="margin:0; color: #166534;">Sugerencia de Carga</h3>
+                <p style="font-size: 12px; color: #166534;">Basado en el historial de hoy en semanas anteriores.</p>
+                <button class="btn" style="background: var(--success); width: 100%; margin-top:10px;" onclick="compartirSugerencia()">📱 Enviar WhatsApp</button>
+            </div>
+            <table id="tabla-sugerencia">
+                <thead><tr><th>Producto</th><th>Cant. Recomendada</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div id="entradas" class="tab-content">
+            <div class="toolbar">
+                <button class="btn" style="background: var(--success);" onclick="abrirModal('entradas')">➕ Entrada Manual</button>
+                <button class="btn" style="background: var(--primary);" onclick="abrirMasiva('entradas')">📋 Carga Masiva</button>
+                <button class="btn" style="background: var(--secondary);" onclick="document.getElementById('imgInput').click()">📸 Escanear Hoja</button>
+                <input type="file" id="imgInput" accept="image/*" style="display:none" onchange="procesarImagen(this)">
+            </div>
+            <div id="loading-ocr" style="display:none; text-align:center; padding:10px;">⌛ Leyendo imagen...</div>
+            <table id="tabla-ent">
+                <thead><tr><th>Fecha</th><th>Cód</th><th>Descripción</th><th>Cant</th><th></th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div id="salidas" class="tab-content">
+            <div class="toolbar">
+                <button class="btn" style="background: var(--danger);" onclick="abrirModal('salidas')">➖ Salida Manual</button>
+                <button class="btn" style="background: var(--primary);" onclick="abrirMasiva('salidas')">📋 Carga Masiva</button>
+            </div>
+            <table id="tabla-sal">
+                <thead><tr><th>Fecha</th><th>Cód</th><th>Descripción</th><th>Cant</th><th></th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="modal-carga" class="modal">
+        <div class="modal-body">
+            <h2 id="modal-titulo">Carga</h2>
+            <input type="date" id="fecha-carga" style="margin-bottom:10px;">
+            <input type="text" id="consola-comando" placeholder="Escribe: nombre cantidad" style="width:100%; padding: 15px; font-size: 18px; border: 2px solid var(--primary);">
+            <div id="lista-previa" style="margin:15px 0; max-height:150px; overflow-y:auto; background:#f8fafc; border-radius:8px;"></div>
+            <button class="btn" style="background:var(--success); width:100%; padding:15px;" onclick="confirmarCarga()">✅ APLICAR CAMBIOS</button>
+            <button class="btn" style="background:#94a3b8; width:100%; margin-top:8px;" onclick="cerrarModal()">Cerrar</button>
+        </div>
+    </div>
+
+    <div id="modal-auditoria" class="modal">
+        <div class="modal-body">
+            <h3>Cuadre de Stock Físico</h3>
+            <p style="font-size: 12px;">Busca un producto y escribe cuánto hay realmente en bodega.</p>
+            <input type="text" id="auditoria-busqueda" placeholder="Nombre del producto..." style="width:100%; padding:12px; margin-bottom:10px;">
+            <div id="auditoria-resultados" style="max-height: 250px; overflow-y: auto;"></div>
+            <button class="btn" style="background:var(--primary); width:100%; margin-top:15px;" onclick="document.getElementById('modal-auditoria').style.display='none'">Finalizar</button>
+        </div>
+    </div>
+
+    <div id="modal-masiva" class="modal">
+        <div class="modal-body">
+            <h2 id="modal-masiva-titulo">Carga Masiva</h2>
+            <label style="font-size: 12px; font-weight: bold; display: block; margin-bottom: 5px;">Seleccionar Fecha:</label>
+            <input type="date" id="fecha-masiva" style="margin-bottom:15px; width: 100%; padding: 8px; font-size: 16px;">
+            
+            <textarea id="texto-masivo" rows="8" style="width:100%; text-align:left; font-family:monospace;" placeholder="papas 10&#10;ramitas 5"></textarea>
+            <button id="btn-procesar-masivo" class="btn" style="width:100%; margin-top:10px;" onclick="procesarCargaMasiva()">🚀 Procesar</button>
+            <button class="btn" style="background:#94a3b8; width:100%; margin-top:8px;" onclick="document.getElementById('modal-masiva').style.display='none'">Cancelar</button>
+        </div>
+    </div>
+
+<script>
+    const STORAGE_KEY = 'STOCK_ANDES_V13_PRO';
+    let temporalItems = [];
+    let modoActual = 'salidas';
+
+    // --- AUDITORÍA SEMANAL ---
+    function checkAuditoriaDay() {
+        const dia = new Date().getDay();
+        if (dia === 1 || dia === 5) { // 1=Lunes, 5=Viernes
+            document.getElementById('aviso-auditoria').style.display = 'block';
+        }
+    }
+
+    function abrirAuditoriaRapida() {
+        document.getElementById('modal-auditoria').style.display = 'flex';
+        renderAuditoria("");
+    }
+
+    function renderAuditoria(bus) {
+        const res = document.getElementById('auditoria-resultados');
+        const inv = extraer('tabla-inv');
+        res.innerHTML = "";
+        
+        inv.filter(f => f[1].toLowerCase().includes(bus.toLowerCase())).forEach(f => {
+            const div = document.createElement('div');
+            div.style = "display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid #eee";
+            div.innerHTML = `
+                <div style="font-size:13px"><b>${f[1]}</b><br><small>Sist: ${f[5]}</small></div>
+                <input type="number" placeholder="Real" style="width:60px" onchange="actualizarStockFisicoDirecto('${f[0]}', this.value)">
+            `;
+            res.appendChild(div);
+        });
+    }
+
+    function actualizarStockFisicoDirecto(cod, val) {
+        const filas = document.querySelectorAll('#tabla-inv tbody tr');
+        filas.forEach(row => {
+            const inp = row.querySelectorAll('input');
+            if(inp[0].value === cod) {
+                inp[6].value = val;
+                sincronizar();
+            }
+        });
+    }
+
+    document.getElementById('auditoria-busqueda').onkeyup = (e) => renderAuditoria(e.target.value);
+
+    // --- LÓGICA CORE ---
+    function sincronizar() {
+        const invRows = document.querySelectorAll('#tabla-inv tbody tr');
+        const entData = extraer('tabla-ent');
+        const salData = extraer('tabla-sal');
+        const bus = document.getElementById('main-search').value.toLowerCase();
+        
+        let cInv = 0, cLow = 0, cSalHoy = 0;
+        const hoyStr = new Date().toISOString().split('T')[0];
+
+        invRows.forEach(row => {
+            const ins = row.querySelectorAll('input');
+            const cod = ins[0].value.trim().toUpperCase();
+            const desc = ins[1].value.toLowerCase();
+            
+            let tEnt = 0; entData.forEach(e => { if(e[1].trim().toUpperCase() === cod) tEnt += parseFloat(e[3]) || 0; });
+            let tSal = 0; salData.forEach(s => { 
+                if(s[1].trim().toUpperCase() === cod) {
+                    tSal += parseFloat(s[3]) || 0;
+                    if(s[0] === hoyStr) cSalHoy += parseFloat(s[3]) || 0;
+                }
+            });
+
+            const ini = parseFloat(ins[2].value) || 0;
+            const sist = ini + tEnt - tSal;
+            const fis = parseFloat(ins[6].value) || 0;
+            const dif = fis - sist;
+
+            ins[3].value = tEnt; ins[4].value = tSal; ins[5].value = sist;
+            ins[7].value = dif;
+            ins[7].className = dif < 0 ? "diff-neg" : (dif > 0 ? "diff-pos" : "");
+
+            let visible = (desc.includes(bus) || cod.includes(bus.toUpperCase()));
+            row.style.display = visible ? "" : "none";
+            row.className = sist < 10 ? "low-stock" : "";
+            
+            if(visible) cInv++;
+            if(sist < 10) cLow++;
+        });
+
+        document.getElementById('stat-total').innerText = cInv;
+        document.getElementById('stat-low').innerText = cLow;
+        document.getElementById('stat-salidas').innerText = cSalHoy;
+    }
+
+    function sugerirCarga() {
+        const salidas = extraer('tabla-sal');
+        const hoy = new Date();
+        const diaSemanaHoy = hoy.getDay();
+        const hace60Dias = new Date(); hace60Dias.setDate(hoy.getDate() - 60);
+        const historial = {};
+
+        salidas.forEach(s => {
+            const fechaS = new Date(s[0]);
+            if (fechaS >= hace60Dias && fechaS.getDay() === diaSemanaHoy) {
+                const nombre = s[2];
+                const cant = parseFloat(s[3]) || 0;
+                if (!historial[nombre]) historial[nombre] = [];
+                historial[nombre].push(cant);
+            }
+        });
+
+        const tbody = document.getElementById('tabla-sugerencia').querySelector('tbody');
+        tbody.innerHTML = "";
+        for (const prod in historial) {
+            const promedio = Math.ceil(historial[prod].reduce((a,b)=>a+b,0) / historial[prod].length);
+            const row = tbody.insertRow();
+            row.insertCell(0).innerText = prod;
+            row.insertCell(1).innerHTML = `<strong>${promedio}</strong>`;
+        }
+    }
+
+    function compartirSugerencia() {
+        const filas = document.querySelectorAll('#tabla-sugerencia tbody tr');
+        let msg = `*🚚 SUGERENCIA CARGA ALAN - ${new Date().toLocaleDateString()}*\n`;
+        filas.forEach(r => msg += `• ${r.cells[0].innerText}: *${r.cells[1].innerText}* un.\n`);
+        window.open("https://wa.me/?text=" + encodeURIComponent(msg), '_blank');
+    }
+
+    // --- FUNCIONES AUXILIARES (Sin Cambios en Lógica Original) ---
+    function extraer(id) { return Array.from(document.querySelectorAll(`#${id} tbody tr`)).filter(tr => tr.querySelectorAll('input').length > 0).map(tr => Array.from(tr.querySelectorAll('input')).map(i => i.value)); }
+    
+    function addRow(id, data = null) {
+        const tb = document.getElementById(id).querySelector('tbody');
+        const row = tb.insertRow();
+        const cols = document.getElementById(id).rows[0].cells.length;
+        let rD = data || Array(cols).fill("");
+        for(let i=0; i<cols; i++){
+            let c = row.insertCell(i);
+            if(i === cols-1) {
+                c.innerHTML = `<button onclick="this.closest('tr').remove(); sincronizar();" style="color:red; border:none; background:none; font-size:18px; cursor:pointer;">✕</button>`;
+            } else {
+                let inp = document.createElement('input');
+                inp.value = rD[i] || "";
+                if(id === 'tabla-inv' && [3,4,5,7].includes(i)) inp.readOnly = true;
+                if((id === 'tabla-ent' || id === 'tabla-sal') && i === 0) { inp.type = "date"; inp.value = rD[i] || new Date().toISOString().split('T')[0]; }
+                inp.oninput = sincronizar;
+                c.appendChild(inp);
+            }
+        }
+        sincronizar();
+    }
+
+   function renderAgrupado(id, filas) {
+        const tb = document.getElementById(id).querySelector('tbody');
+        tb.innerHTML = "";
+        
+        // Ordenar las filas por fecha de la más nueva a la más antigua
+        filas.sort((a,b) => new Date(b[0]) - new Date(a[0]));
+        
+        let fA = ""; 
+        let totalProductosFecha = 0;
+        let filasDeLaFecha = [];
+
+        function renderizarBloqueFecha() {
+            if (filasDeLaFecha.length > 0) {
+                // 1. Pintar el encabezado de la fecha
+                let rHead = tb.insertRow();
+                let cHead = rHead.insertCell(0); cHead.colSpan = 5; 
+                cHead.style = "background:#f1f5f9; font-weight:bold; text-align:left; padding:8px; color:#1e293b;";
+                cHead.innerText = "📅 " + fA;
+
+                // 2. Pintar los productos de esa fecha
+                filasDeLaFecha.forEach(f => {
+                    addRow(id, f);
+                });
+
+                // 3. NUEVA BARRA INFERIOR DE TOTALES PARA ESTA FECHA
+                let rTotal = tb.insertRow();
+                let cLabel = rTotal.insertCell(0); cLabel.colSpan = 3;
+                cLabel.style = "background:#f8fafc; font-weight:bold; text-align:right; padding:8px; font-size:12px; border-top:2px solid #cbd5e0;";
+                cLabel.innerText = "TOTAL PRODUCTOS DE ESTA FECHA:";
+
+                let cSuma = rTotal.insertCell(1);
+                cSuma.style = "background:#e2e8f0; font-weight:bold; text-align:center; padding:8px; font-size:13px; color:var(--primary); border-top:2px solid #cbd5e0;";
+                cSuma.innerHTML = `<strong>${totalProductosFecha} un.</strong>`;
+
+                let cVacio = rTotal.insertCell(2); // Celda vacía para la columna del botón eliminar
+                cVacio.style = "background:#f8fafc; border-top:2px solid #cbd5e0;";
+            }
+        }
+
+        filas.forEach((f) => {
+            if(f[0] !== fA) {
+                // Si cambiamos de fecha, renderizamos el bloque acumulado anterior
+                renderizarBloqueFecha();
+                // Reiniciamos contadores para la nueva fecha
+                fA = f[0];
+                totalProductosFecha = 0;
+                filasDeLaFecha = [];
+            }
+            filasDeLaFecha.push(f);
+            totalProductosFecha += parseFloat(f[3]) || 0;
+        });
+
+        // Renderizar el último bloque de fecha restante
+        renderizarBloqueFecha();
+        sincronizar();
+    }
+
+    function abrirModal(t) { modoActual = t; temporalItems = []; actualizarVistaPrevia(); document.getElementById('modal-carga').style.display='flex'; document.getElementById('fecha-carga').value = new Date().toISOString().split('T')[0]; document.getElementById('consola-comando').focus(); }
+    function cerrarModal() { document.getElementById('modal-carga').style.display='none'; }
+    function openTab(e, n) { document.querySelectorAll(".tab-content, .tab-btn").forEach(x => x.classList.remove("active")); document.getElementById(n).classList.add("active"); e.currentTarget.classList.add("active"); }
+
+    document.getElementById('consola-comando').addEventListener('keypress', (e) => {
+        if(e.key === 'Enter') {
+            let val = e.target.value.trim();
+            if(!val) return;
+            let partes = val.split(" ");
+            let cant = 1; let bus = val;
+            if(!isNaN(partes[partes.length-1]) && partes.length > 1) { cant = parseFloat(partes.pop()); bus = partes.join(" "); }
+            const inv = extraer('tabla-inv');
+            const m = inv.find(r => r[1].toLowerCase().includes(bus.toLowerCase()) || r[0].toUpperCase() === bus.toUpperCase());
+            if(m) { temporalItems.unshift({ cod: m[0], desc: m[1], cant: cant }); actualizarVistaPrevia(); e.target.value = ""; }
+            else alert("No encontrado: " + bus);
+        }
+    });
+
+    function actualizarVistaPrevia() {
+        const div = document.getElementById('lista-previa');
+        div.innerHTML = temporalItems.map((it, idx) => `
+            <div style="display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid #eee">
+                <span><b>${it.cant}x</b> ${it.desc}</span>
+                <button onclick="temporalItems.splice(${idx},1); actualizarVistaPrevia();" style="color:red; border:none; background:none;">✕</button>
+            </div>
+        `).join('');
+    }
+
+    function confirmarCarga() {
+        if(temporalItems.length === 0) { cerrarModal(); return; }
+        const f = document.getElementById('fecha-carga').value;
+        const id = modoActual === 'salidas' ? 'tabla-sal' : 'tabla-ent';
+        let d = extraer(id);
+        temporalItems.forEach(item => d.push([f, item.cod, item.desc, item.cant, ""]));
+        renderAgrupado(id, d);
+        cerrarModal(); sincronizar();
+    }
+
+   function abrirMasiva(tipo) {
+        modoActual = tipo;
+        document.getElementById('modal-masiva').style.display = 'flex';
+        document.getElementById('btn-procesar-masivo').style.background = tipo === 'entradas' ? 'var(--success)' : 'var(--danger)';
+        // NUEVO: Hace que el calendario muestre el día actual por defecto al abrirse
+        document.getElementById('fecha-masiva').value = new Date().toISOString().split('T')[0];
+    }
+
+    function procesarCargaMasiva() {
+        const texto = document.getElementById('texto-masivo').value;
+        // MODIFICADO: Ahora toma la fecha seleccionada en el modal, no la fija de hoy
+        const fecha = document.getElementById('fecha-masiva').value; 
+        
+        if(!texto.trim() || !fecha) { alert("Por favor, ingresa datos y selecciona una fecha válida."); return; }
+        
+        const lineas = texto.split("\n");
+        const inv = extraer('tabla-inv');
+        const idTabla = modoActual === 'entradas' ? 'tabla-ent' : 'tabla-sal';
+        let datosActuales = extraer(idTabla);
+        
+        lineas.forEach(linea => {
+            let partes = linea.trim().split(/\s+/);
+            if(partes.length < 2) return;
+            let cant = parseFloat(partes.pop());
+            let bus = partes.join(" ").toLowerCase();
+            const m = inv.find(r => r[1].toLowerCase().includes(bus) || r[0].toUpperCase() === bus.toUpperCase());
+            if(m && !isNaN(cant)) datosActuales.push([fecha, m[0], m[1], cant, ""]);
+        });
+        
+        renderAgrupado(idTabla, datosActuales);
+        document.getElementById('modal-masiva').style.display = 'none';
+        document.getElementById('texto-masivo').value = ""; // Limpia el recuadro para la próxima
+        sincronizar();
+    }
+    function guardar() { localStorage.setItem(STORAGE_KEY, JSON.stringify({ inv: extraer('tabla-inv'), ent: extraer('tabla-ent'), sal: extraer('tabla-sal') })); alert("✅ Datos guardados."); }
+    
+    function cargar() { 
+        const d = JSON.parse(localStorage.getItem(STORAGE_KEY)); 
+        if(d){ 
+            const tb = document.getElementById('tabla-inv').querySelector('tbody');
+            tb.innerHTML = ""; d.inv.forEach(f => addRow('tabla-inv', f));
+            renderAgrupado('tabla-ent', d.ent); 
+            renderAgrupado('tabla-sal', d.sal); 
+            sincronizar(); 
+        } 
+    }
+
+    async function procesarImagen(input) {
+        const file = input.files[0]; if (!file) return;
+        document.getElementById('loading-ocr').style.display = 'block';
+        try {
+            const result = await Tesseract.recognize(file, 'spa');
+            abrirMasiva('entradas');
+            document.getElementById('texto-masivo').value = result.data.text;
+        } catch (e) { alert("Error OCR"); }
+        finally { document.getElementById('loading-ocr').style.display = 'none'; }
+    }
+
+    function exportarExcel() {
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Cód", "Descripción", "Inicial", "Ent", "Sal", "Sist", "Físico", "Dif"], ...extraer('tabla-inv')]), "STOCK");
+        XLSX.writeFile(wb, `Inventario_Alan_${new Date().toLocaleDateString()}.xlsx`);
+    }
+
+    function procesarExcel(input) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+            const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+            const tb = document.getElementById('tabla-inv').querySelector('tbody');
+            tb.innerHTML = "";
+            json.slice(1).forEach(f => addRow('tabla-inv', f));
+            sincronizar();
+        };
+        reader.readAsArrayBuffer(input.files[0]);
+    }
+
+    window.onload = () => {
+        cargar();
+        checkAuditoriaDay();
+        document.getElementById('fecha-actual').innerText = new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    };
+</script>
+</body>
+</html>
